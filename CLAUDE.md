@@ -7,6 +7,9 @@ Automatisations n8n déployées sur **https://n8n.nosho.cc**
 Le serveur MCP `n8n` est configuré dans `.mcp.json` (non versionné).
 Template disponible dans `.mcp.json.example`.
 
+**URL MCP native** : `https://n8n.nosho.cc/mcp-server/http`
+Transport : Streamable HTTP avec Bearer token.
+
 ### Outils MCP disponibles
 - Recherche et configuration de nodes n8n
 - Validation de workflows

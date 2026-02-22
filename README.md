@@ -6,64 +6,75 @@ Built and maintained with **Claude Code** using the n8n MCP integration.
 
 ---
 
-## Structure
+## MCP Server
 
-```
-.
-├── workflows/          # Exported n8n workflow JSON files
-├── .mcp.json           # Claude Code MCP config (local only, not committed)
-├── .mcp.json.example   # MCP config template
-└── CLAUDE.md           # Claude Code project instructions
-```
+n8n exposes a native **Streamable HTTP MCP server** that allows Claude Code to interact directly with the n8n instance.
 
-## Setup
+**URL** : `https://n8n.nosho.cc/mcp-server/http`
 
-### Prerequisites
-
-- [Node.js](https://nodejs.org) ≥ 18
-- [Claude Code](https://claude.ai/claude-code)
-- Access to an n8n instance
-
-### MCP Configuration
-
-Copy the example config and fill in your credentials:
-
-```bash
-cp .mcp.json.example .mcp.json
-```
-
-Edit `.mcp.json` with your n8n instance URL and API key:
+### Configuration (`.mcp.json`)
 
 ```json
 {
   "mcpServers": {
     "n8n": {
-      "command": "npx",
-      "args": ["-y", "n8n-mcp"],
-      "env": {
-        "N8N_HOST": "https://your-n8n-instance.example.com",
-        "N8N_API_KEY": "your-api-key",
-        "N8N_VERSION": "1"
+      "url": "https://n8n.nosho.cc/mcp-server/http",
+      "headers": {
+        "Authorization": "Bearer <your-api-key>"
       }
     }
   }
 }
 ```
 
-Then reload Claude Code in this project — the `n8n` MCP server will be available.
+Copy `.mcp.json.example` → `.mcp.json` and fill in your API key, then reload Claude Code.
 
-### Generate an n8n API Key
+> `.mcp.json` is gitignored — API keys are never committed.
 
-1. Open your n8n instance → **Settings** → **API**
-2. Click **Create API key**
-3. Copy the key into `.mcp.json`
+---
+
+## Structure
+
+```
+.
+├── workflows/                            # Exported n8n workflow JSON files
+│   └── chatbot-slack-openrouter.json     # ChatBot — Slack + AI Agent + OpenRouter
+├── .mcp.json                             # Claude Code MCP config (local only)
+├── .mcp.json.example                     # MCP config template
+└── CLAUDE.md                             # Claude Code project instructions
+```
+
+---
 
 ## Workflows
 
-Workflows are stored as JSON exports in `workflows/`. To import one:
+### ChatBot (`chatbot-slack-openrouter.json`)
 
-1. Open n8n → **Workflows** → **Import from File**
-2. Select the desired JSON file
+Slack chatbot powered by an n8n AI Agent with OpenRouter as LLM.
+
+**Flow :**
+```
+Slack Trigger → Filtre messages bot → AI Agent → Réponse Slack
+                                           ↑
+                                    OpenRouter Chat Model
+                                    Mémoire conversation (10 msgs)
+```
+
+**Nodes :**
+| Node | Type | Role |
+|---|---|---|
+| Slack Trigger | `n8n-nodes-base.slackTrigger` | Écoute les messages Slack |
+| Filtre messages bot | `n8n-nodes-base.filter` | Bloque les messages de bots (anti-boucle) |
+| AI Agent | `@n8n/n8n-nodes-langchain.agent` | Agent conversationnel |
+| OpenRouter Chat Model | `@n8n/n8n-nodes-langchain.lmChatOpenRouter` | LLM via OpenRouter (`openai/gpt-4o-mini`) |
+| Mémoire conversation | `@n8n/n8n-nodes-langchain.memoryBufferWindow` | Mémoire glissante (10 échanges) |
+| Réponse Slack | `n8n-nodes-base.slack` | Répond en thread dans Slack |
+
+**Credentials requis :**
+- `Slack Bot Token` — OAuth bot token avec scopes `channels:history`, `chat:write`, `reactions:write`
+- `OpenRouter API` — Clé API [openrouter.ai](https://openrouter.ai)
+
+---
 
 ## Available Claude Code Skills
 
@@ -76,6 +87,8 @@ Workflows are stored as JSON exports in `workflows/`. To import one:
 | `n8n-expression-syntax` | `{{ }}` expression syntax and debugging |
 | `n8n-validation-expert` | Validation error interpretation |
 | `n8n-mcp-tools-expert` | Guide for using n8n MCP tools |
+
+---
 
 ## License
 

@@ -1,12 +1,9 @@
 {
   "mcpServers": {
     "n8n": {
-      "command": "npx",
-      "args": ["-y", "n8n-mcp"],
-      "env": {
-        "N8N_HOST": "https://your-n8n-instance.example.com",
-        "N8N_API_KEY": "your-n8n-api-key-here",
-        "N8N_VERSION": "1"
+      "url": "https://your-n8n-instance.example.com/mcp-server/http",
+      "headers": {
+        "Authorization": "Bearer your-n8n-api-key-here"
       }
     }
   }
