@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-02-22T19:11:00.272Z",
+  "updatedAt": "2026-02-22T19:25:28.735Z",
   "createdAt": "2026-02-22T18:41:34.997Z",
   "id": "a96l3U1U2OTdcels",
   "name": "ChatBot",
@@ -100,7 +100,7 @@
     },
     {
       "parameters": {
-        "model": "openai/gpt-4o-mini",
+        "model": "z-ai/glm-4.7-flash",
         "options": {}
       },
       "id": "node-openrouter",
@@ -230,9 +230,9 @@
   "staticData": null,
   "meta": null,
   "pinData": {},
-  "versionId": "b1c2175b-8051-4204-ac3f-1fc195969790",
-  "activeVersionId": "b1c2175b-8051-4204-ac3f-1fc195969790",
-  "versionCounter": 16,
+  "versionId": "cfb114c4-e3ed-43fb-8499-c22b8c26b850",
+  "activeVersionId": "cfb114c4-e3ed-43fb-8499-c22b8c26b850",
+  "versionCounter": 19,
   "triggerCount": 1,
   "shared": [
     {
@@ -288,9 +288,9 @@
   ],
   "tags": [],
   "activeVersion": {
-    "updatedAt": "2026-02-22T19:11:00.274Z",
-    "createdAt": "2026-02-22T19:11:00.274Z",
-    "versionId": "b1c2175b-8051-4204-ac3f-1fc195969790",
+    "updatedAt": "2026-02-22T19:25:28.737Z",
+    "createdAt": "2026-02-22T19:25:28.737Z",
+    "versionId": "cfb114c4-e3ed-43fb-8499-c22b8c26b850",
     "workflowId": "a96l3U1U2OTdcels",
     "nodes": [
       {
@@ -386,7 +386,7 @@
       },
       {
         "parameters": {
-          "model": "openai/gpt-4o-mini",
+          "model": "z-ai/glm-4.7-flash",
           "options": {}
         },
         "id": "node-openrouter",
@@ -511,10 +511,10 @@
     "autosaved": false,
     "workflowPublishHistory": [
       {
-        "createdAt": "2026-02-22T19:11:08.105Z",
-        "id": 5,
+        "createdAt": "2026-02-22T19:25:28.850Z",
+        "id": 6,
         "workflowId": "a96l3U1U2OTdcels",
-        "versionId": "b1c2175b-8051-4204-ac3f-1fc195969790",
+        "versionId": "cfb114c4-e3ed-43fb-8499-c22b8c26b850",
         "event": "activated",
         "userId": "06ca0b20-fa39-4fb0-9c89-ddceb7bb7669"
       }
