@@ -1,0 +1,21 @@
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# MCP config (contains API keys)
+.mcp.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
