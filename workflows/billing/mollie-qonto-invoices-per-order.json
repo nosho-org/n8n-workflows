@@ -6,7 +6,8 @@
         "httpMethod": "POST",
         "path": "supabase-order-items",
         "responseMode": "responseNode",
-        "options": {}
+        "options": {},
+        "authentication": "headerAuth"
       },
       "id": "a1b2c3d4-0001-0001-0001-000000000001",
       "name": "Supabase DB Webhook",
@@ -16,7 +17,13 @@
         0,
         -280
       ],
-      "webhookId": "supabase-order-items-update"
+      "webhookId": "supabase-order-items-update",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "u0C80e3e6WanB7QM",
+          "name": "Supabase Webhook Secret"
+        }
+      }
     },
     {
       "parameters": {
@@ -286,53 +293,6 @@
         2460,
         140
       ]
-    },
-    {
-      "id": "a1b2c3d4-0015-0015-0015-000000000015",
-      "name": "Check Webhook Secret",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        280,
-        -280
-      ],
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": ""
-          },
-          "conditions": [
-            {
-              "id": "cond-secret",
-              "leftValue": "={{ .headers[\"x-webhook-secret\"] || .headers[\"X-Webhook-Secret\"] }}",
-              "rightValue": "{{SUPABASE_WEBHOOK_SECRET}}",
-              "operator": {
-                "type": "string",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      }
-    },
-    {
-      "id": "a1b2c3d4-0016-0016-0016-000000000016",
-      "name": "Respond 401 Unauthorized",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        560,
-        -140
-      ],
-      "parameters": {
-        "respondWith": "json",
-        "responseCode": 401,
-        "responseBody": "{\"error\": \"Unauthorized\"}",
-        "options": {}
-      }
     }
   ],
   "connections": {
@@ -340,7 +300,7 @@
       "main": [
         [
           {
-            "node": "Check Webhook Secret",
+            "node": "Extract Webhook Record",
             "type": "main",
             "index": 0
           }
@@ -476,24 +436,6 @@
         [
           {
             "node": "Chat Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Check Webhook Secret": {
-      "main": [
-        [
-          {
-            "node": "Extract Webhook Record",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Respond 401 Unauthorized",
             "type": "main",
             "index": 0
           }
