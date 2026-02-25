@@ -1,0 +1,324 @@
+{
+  "name": "Mollie → Qonto - Factures par client",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "supabase-order-items",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Supabase DB Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, -280],
+      "webhookId": "supabase-order-items-update"
+    },
+    {
+      "parameters": {
+        "public": false,
+        "options": {
+          "title": "Facture Qonto",
+          "subtitle": "Entrez un order_item UUID ou un Mollie transaction ID (tr_xxx) pour générer une facture brouillon."
+        }
+      },
+      "id": "a1b2c3d4-0002-0002-0002-000000000002",
+      "name": "Chat",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 280]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input depuis le Supabase Database Webhook\n// Format: { type: 'UPDATE', table: 'order_items', record: {...}, old_record: {...} }\nconst body = $input.first().json.body || $input.first().json;\nconst record = body.record || body;\n\nif (!record || record.order_id === undefined) {\n  throw new Error('Payload Supabase invalide : champ order_id manquant dans record');\n}\n\nreturn [{\n  json: {\n    source: 'webhook',\n    order_item: {\n      id: record.id,\n      order_id: record.order_id,\n      description: record.description || '',\n      description_extra_lines: record.description_extra_lines || null,\n      unit_price_cents: record.unit_price,\n      tax_percentage: record.tax_percentage || 20,\n      organization_id: record.organization_id,\n      mollie_transaction_id: record.mollie_transaction_id || null\n    }\n  }\n}];"
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
+      "name": "Extract Webhook Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, -280]
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = ($input.first().json.chatInput || '').trim();\n\n// UUID v4 (order_item_id)\nconst uuidMatch = msg.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);\n// Mollie transaction ID (tr_xxx)\nconst mollieMatch = msg.match(/tr_[a-zA-Z0-9]+/);\n\nconst order_item_id = uuidMatch ? uuidMatch[0] : null;\nconst mollie_transaction_id = mollieMatch ? mollieMatch[0] : null;\n\nif (!order_item_id && !mollie_transaction_id) {\n  throw new Error('Merci de fournir un order_item UUID ou un Mollie transaction ID (tr_xxx).\\nExemple : \"550e8400-e29b-41d4-a716-446655440000\" ou \"tr_abc123\"');\n}\n\nreturn [{ json: { source: 'chat', order_item_id, mollie_transaction_id } }];"
+      },
+      "id": "a1b2c3d4-0004-0004-0004-000000000004",
+      "name": "Parse Chat Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 280]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-has-order-item-id",
+              "leftValue": "={{ $json.order_item_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000005",
+      "name": "Has Order Item ID?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [540, 280]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "order_items",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.order_item_id }}"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0006-0006-0006-000000000006",
+      "name": "Get Order Item by ID",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [800, 140],
+      "credentials": {
+        "supabaseApi": {
+          "id": "20dOl3DBXkYSgXsf",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "order_items",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "mollie_transaction_id",
+              "keyValue": "={{ $json.mollie_transaction_id }}"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0007-0007-0007-000000000007",
+      "name": "Get Order Item by Mollie ID",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [800, 420],
+      "credentials": {
+        "supabaseApi": {
+          "id": "20dOl3DBXkYSgXsf",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nif (!items || items.length === 0) {\n  throw new Error('Order item non trouvé dans Supabase');\n}\nconst item = items[0].json;\n\nreturn [{\n  json: {\n    source: 'chat',\n    order_item: {\n      id: item.id,\n      order_id: item.order_id,\n      description: item.description || '',\n      description_extra_lines: item.description_extra_lines || null,\n      unit_price_cents: item.unit_price,\n      tax_percentage: item.tax_percentage || 20,\n      organization_id: item.organization_id,\n      mollie_transaction_id: item.mollie_transaction_id || null\n    }\n  }\n}];"
+      },
+      "id": "a1b2c3d4-0008-0008-0008-000000000008",
+      "name": "Normalize Order Item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1060, 280]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "organizations",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.order_item.organization_id }}"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0009-0009-0009-000000000009",
+      "name": "Get Organization",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1340, 0],
+      "credentials": {
+        "supabaseApi": {
+          "id": "20dOl3DBXkYSgXsf",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const org = $input.first().json;\n\n// Récupère les données order_item depuis le noeud du bon chemin\nlet orderItem, source;\n\ntry {\n  const webhookItems = $('Extract Webhook Record').all();\n  if (webhookItems.length > 0 && webhookItems[0].json.order_item) {\n    orderItem = webhookItems[0].json.order_item;\n    source = 'webhook';\n  }\n} catch(e) { /* noeud non exécuté dans ce run */ }\n\nif (!orderItem) {\n  try {\n    const chatItems = $('Normalize Order Item').all();\n    if (chatItems.length > 0 && chatItems[0].json.order_item) {\n      orderItem = chatItems[0].json.order_item;\n      source = 'chat';\n    }\n  } catch(e) { /* noeud non exécuté dans ce run */ }\n}\n\nif (!orderItem) {\n  throw new Error('Impossible de récupérer les données du order_item');\n}\n\nif (!org.qonto_client_id) {\n  throw new Error(`Organisation ${org.id || 'inconnue'} sans qonto_client_id — vérifier la table organizations`);\n}\n\n// Conversion cents → euros\nconst unitPriceEuros = (orderItem.unit_price_cents / 100).toFixed(2);\n// tax_percentage stocké comme entier (ex: 20 pour 20%)\nconst vatRateDecimal = (orderItem.tax_percentage / 100).toFixed(4);\n\nconst today = new Date().toISOString().split('T')[0];\n\nconst invoiceItem = {\n  title: String(orderItem.order_id || orderItem.id),\n  description: String(orderItem.description || ''),\n  quantity: '1',\n  unit_price: {\n    value: unitPriceEuros,\n    currency: 'EUR'\n  },\n  vat_rate: vatRateDecimal\n};\n\nif (orderItem.description_extra_lines) {\n  invoiceItem.description_extra_lines = orderItem.description_extra_lines;\n}\n\nreturn [{\n  json: {\n    source,\n    invoice: {\n      client_id: org.qonto_client_id,\n      currency: 'EUR',\n      status: 'draft',\n      issue_date: today,\n      due_date: today,\n      items: [invoiceItem]\n    }\n  }\n}];"
+      },
+      "id": "a1b2c3d4-0010-0010-0010-000000000010",
+      "name": "Build Invoice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1620, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://thirdparty.qonto.com/v2/client_invoices",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.invoice }}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0011-0011-0011-000000000011",
+      "name": "Create Qonto Invoice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1900, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "JE1TQ3ThaOK7VuI4",
+          "name": "Mollie API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-is-webhook",
+              "leftValue": "={{ $('Build Invoice').first().json.source }}",
+              "rightValue": "webhook",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0012-0012-0012-000000000012",
+      "name": "Route Response",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2180, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"invoice_id\": \"{{ $json.client_invoice?.id ?? $json.id ?? 'N/A' }}\",\n  \"status\": \"draft\"\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0013-0013-0013-000000000013",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2460, -140]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst inv = raw.client_invoice || raw;\nconst invoiceId = inv.id || 'N/A';\nconst invoiceNum = inv.number || 'N/A';\nconst total = inv.total_amount ? `${inv.total_amount.value} ${inv.total_amount.currency}` : 'N/A';\n\nreturn [{\n  json: {\n    output: `✅ Facture créée en brouillon dans Qonto !\\n\\n🆔 ID : ${invoiceId}\\n📄 Numéro : ${invoiceNum}\\n💶 Montant : ${total}\\n📌 Statut : draft`\n  }\n}];"
+      },
+      "id": "a1b2c3d4-0014-0014-0014-000000000014",
+      "name": "Chat Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2460, 140]
+    }
+  ],
+  "connections": {
+    "Supabase DB Webhook": {
+      "main": [
+        [{ "node": "Extract Webhook Record", "type": "main", "index": 0 }]
+      ]
+    },
+    "Chat": {
+      "main": [
+        [{ "node": "Parse Chat Input", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extract Webhook Record": {
+      "main": [
+        [{ "node": "Get Organization", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Chat Input": {
+      "main": [
+        [{ "node": "Has Order Item ID?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Has Order Item ID?": {
+      "main": [
+        [{ "node": "Get Order Item by ID", "type": "main", "index": 0 }],
+        [{ "node": "Get Order Item by Mollie ID", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Order Item by ID": {
+      "main": [
+        [{ "node": "Normalize Order Item", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Order Item by Mollie ID": {
+      "main": [
+        [{ "node": "Normalize Order Item", "type": "main", "index": 0 }]
+      ]
+    },
+    "Normalize Order Item": {
+      "main": [
+        [{ "node": "Get Organization", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Organization": {
+      "main": [
+        [{ "node": "Build Invoice", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Invoice": {
+      "main": [
+        [{ "node": "Create Qonto Invoice", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create Qonto Invoice": {
+      "main": [
+        [{ "node": "Route Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Route Response": {
+      "main": [
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }],
+        [{ "node": "Chat Response", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d21a270c9969d732396f8999352cc11d66e8855ed318525ceb69b26139ad58e0"
+  },
+  "pinData": {}
+}
