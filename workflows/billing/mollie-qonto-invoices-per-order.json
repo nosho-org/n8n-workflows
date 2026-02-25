@@ -12,7 +12,10 @@
       "name": "Supabase DB Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, -280],
+      "position": [
+        0,
+        -280
+      ],
       "webhookId": "supabase-order-items-update"
     },
     {
@@ -27,7 +30,10 @@
       "name": "Chat",
       "type": "@n8n/n8n-nodes-langchain.chatTrigger",
       "typeVersion": 1.1,
-      "position": [0, 280]
+      "position": [
+        0,
+        280
+      ]
     },
     {
       "parameters": {
@@ -37,7 +43,10 @@
       "name": "Extract Webhook Record",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [280, -280]
+      "position": [
+        560,
+        -420
+      ]
     },
     {
       "parameters": {
@@ -47,7 +56,10 @@
       "name": "Parse Chat Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [280, 280]
+      "position": [
+        280,
+        280
+      ]
     },
     {
       "parameters": {
@@ -75,7 +87,10 @@
       "name": "Has Order Item ID?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [540, 280]
+      "position": [
+        540,
+        280
+      ]
     },
     {
       "parameters": {
@@ -94,7 +109,10 @@
       "name": "Get Order Item by ID",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [800, 140],
+      "position": [
+        800,
+        140
+      ],
       "credentials": {
         "supabaseApi": {
           "id": "20dOl3DBXkYSgXsf",
@@ -119,7 +137,10 @@
       "name": "Get Order Item by Mollie ID",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [800, 420],
+      "position": [
+        800,
+        420
+      ],
       "credentials": {
         "supabaseApi": {
           "id": "20dOl3DBXkYSgXsf",
@@ -135,7 +156,10 @@
       "name": "Normalize Order Item",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1060, 280]
+      "position": [
+        1060,
+        280
+      ]
     },
     {
       "parameters": {
@@ -154,7 +178,10 @@
       "name": "Get Organization",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [1340, 0],
+      "position": [
+        1340,
+        0
+      ],
       "credentials": {
         "supabaseApi": {
           "id": "20dOl3DBXkYSgXsf",
@@ -170,7 +197,10 @@
       "name": "Build Invoice",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1620, 0]
+      "position": [
+        1620,
+        0
+      ]
     },
     {
       "parameters": {
@@ -187,7 +217,10 @@
       "name": "Create Qonto Invoice",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1900, 0],
+      "position": [
+        1900,
+        0
+      ],
       "credentials": {
         "httpHeaderAuth": {
           "id": "JE1TQ3ThaOK7VuI4",
@@ -221,7 +254,10 @@
       "name": "Route Response",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2180, 0]
+      "position": [
+        2180,
+        0
+      ]
     },
     {
       "parameters": {
@@ -233,7 +269,10 @@
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [2460, -140]
+      "position": [
+        2460,
+        -140
+      ]
     },
     {
       "parameters": {
@@ -243,82 +282,230 @@
       "name": "Chat Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2460, 140]
+      "position": [
+        2460,
+        140
+      ]
+    },
+    {
+      "id": "a1b2c3d4-0015-0015-0015-000000000015",
+      "name": "Check Webhook Secret",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        280,
+        -280
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-secret",
+              "leftValue": "={{ .headers[\"x-webhook-secret\"] || .headers[\"X-Webhook-Secret\"] }}",
+              "rightValue": "{{SUPABASE_WEBHOOK_SECRET}}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1b2c3d4-0016-0016-0016-000000000016",
+      "name": "Respond 401 Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        560,
+        -140
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 401,
+        "responseBody": "{\"error\": \"Unauthorized\"}",
+        "options": {}
+      }
     }
   ],
   "connections": {
     "Supabase DB Webhook": {
       "main": [
-        [{ "node": "Extract Webhook Record", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Check Webhook Secret",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Chat": {
       "main": [
-        [{ "node": "Parse Chat Input", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Parse Chat Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Extract Webhook Record": {
       "main": [
-        [{ "node": "Get Organization", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Get Organization",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Parse Chat Input": {
       "main": [
-        [{ "node": "Has Order Item ID?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Has Order Item ID?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Has Order Item ID?": {
       "main": [
-        [{ "node": "Get Order Item by ID", "type": "main", "index": 0 }],
-        [{ "node": "Get Order Item by Mollie ID", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Get Order Item by ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Order Item by Mollie ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Get Order Item by ID": {
       "main": [
-        [{ "node": "Normalize Order Item", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Normalize Order Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Get Order Item by Mollie ID": {
       "main": [
-        [{ "node": "Normalize Order Item", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Normalize Order Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Normalize Order Item": {
       "main": [
-        [{ "node": "Get Organization", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Get Organization",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Get Organization": {
       "main": [
-        [{ "node": "Build Invoice", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Build Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Build Invoice": {
       "main": [
-        [{ "node": "Create Qonto Invoice", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Create Qonto Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Create Qonto Invoice": {
       "main": [
-        [{ "node": "Route Response", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Route Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Route Response": {
       "main": [
-        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }],
-        [{ "node": "Chat Response", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Chat Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Webhook Secret": {
+      "main": [
+        [
+          {
+            "node": "Extract Webhook Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401 Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
   "settings": {
     "executionOrder": "v1",
     "availableInMCP": false,
+    "timeSavedMode": "fixed",
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "staticData": null,
-  "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "d21a270c9969d732396f8999352cc11d66e8855ed318525ceb69b26139ad58e0"
-  },
-  "pinData": {}
+  "staticData": null
 }
