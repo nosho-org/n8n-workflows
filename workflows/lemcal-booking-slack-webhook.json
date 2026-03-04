@@ -1,0 +1,133 @@
+{
+  "name": "Lemcal — Notif Slack nouveau rendez-vous",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lemcal-booking",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook",
+      "name": "Lemcal Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "OK",
+        "options": {}
+      },
+      "id": "node-respond",
+      "name": "Répondre 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 480]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "CHANNEL_ID",
+          "mode": "id"
+        },
+        "messageType": "block",
+        "blocksUi": {
+          "blocksValues": [
+            {
+              "type": "header",
+              "text": {
+                "type": "plain_text",
+                "text": "📅 Nouveau rendez-vous Lemcal !"
+              }
+            },
+            {
+              "type": "section",
+              "fields": [
+                {
+                  "type": "mrkdwn",
+                  "text": "*Prospect :*\n{{ $json.body.inviteeName || $json.body.bookerName || $json.body.attendees?.[0]?.name || 'Inconnu' }}"
+                },
+                {
+                  "type": "mrkdwn",
+                  "text": "*Email :*\n{{ $json.body.inviteeEmail || $json.body.bookerEmail || $json.body.attendees?.[0]?.email || 'Non renseigné' }}"
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "fields": [
+                {
+                  "type": "mrkdwn",
+                  "text": "*Type de réunion :*\n{{ $json.body.title || $json.body.eventTitle || $json.body.meetingTitle || 'Rendez-vous' }}"
+                },
+                {
+                  "type": "mrkdwn",
+                  "text": "*Date & heure :*\n{{ $json.body.startTime ? new Date($json.body.startTime).toLocaleString('fr-FR', {timeZone: 'Europe/Paris', dateStyle: 'full', timeStyle: 'short'}) : 'Non précisé' }}"
+                }
+              ]
+            },
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "{{ $json.body.location ? '*Lieu / Lien :* ' + $json.body.location : '' }}"
+              }
+            },
+            {
+              "type": "divider"
+            },
+            {
+              "type": "context",
+              "elements": [
+                {
+                  "type": "mrkdwn",
+                  "text": "Déclenché via Lemcal • n8n"
+                }
+              ]
+            }
+          ]
+        },
+        "otherOptions": {}
+      },
+      "id": "node-slack-notify",
+      "name": "Notif Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [460, 300],
+      "credentials": {
+        "slackApi": {
+          "id": "WHD6a0UsTiaS0AiG",
+          "name": "slack_n8n"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Lemcal Webhook": {
+      "main": [
+        [
+          {
+            "node": "Notif Slack",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Répondre 200 OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["lemlist", "lemcal", "slack", "prospection"]
+}
