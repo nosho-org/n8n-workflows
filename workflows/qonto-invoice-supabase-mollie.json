@@ -1,0 +1,624 @@
+{
+  "name": "Qonto Invoice — Supabase + Mollie",
+  "nodes": [
+    {
+      "id": "n-trigger-sb",
+      "name": "Supabase DB Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -400,
+        -160
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoice-order-item",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "webhookId": "invoice-order-item-01",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "u0C80e3e6WanB7QM",
+          "name": "Supabase Webhook Secret"
+        }
+      }
+    },
+    {
+      "id": "n-trigger-chat",
+      "name": "Chat",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -400,
+        80
+      ],
+      "parameters": {},
+      "webhookId": "chat-invoice-trigger"
+    },
+    {
+      "id": "n-trigger-http",
+      "name": "HTTP Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -400,
+        320
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "create-invoice",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "create-invoice-manual"
+    },
+    {
+      "id": "n-normalize",
+      "name": "Normaliser Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -100,
+        80
+      ],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nlet source, orderItemId, molliePaymentId, organizationId, rawRecord;\n\n// Supabase DB Webhook: body.record contient l'order_item\nif (item.body?.type === 'INSERT' || item.body?.type === 'UPDATE') {\n  source = 'supabase_webhook';\n  rawRecord = item.body.record;\n  orderItemId = rawRecord.id;\n  molliePaymentId = rawRecord.mollie_transaction_id || null;\n  organizationId = rawRecord.organization_id || null;\n}\n// HTTP Webhook Manuel: body contient order_item_id ou mollie_payment_id\nelse if (item.body?.order_item_id || item.body?.mollie_payment_id) {\n  source = 'http_webhook';\n  orderItemId = item.body.order_item_id || null;\n  molliePaymentId = item.body.mollie_payment_id || null;\n  organizationId = item.body.organization_id || null;\n}\n// Chat Trigger: texte libre avec UUID ou tr_xxx\nelse if (item.chatInput !== undefined) {\n  source = 'chat';\n  const text = (item.chatInput || '').trim();\n  const uuidMatch = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);\n  const trMatch = text.match(/tr_[A-Za-z0-9]+/);\n  orderItemId = uuidMatch ? uuidMatch[0] : null;\n  molliePaymentId = trMatch ? trMatch[0] : null;\n  organizationId = null;\n  if (!orderItemId && !molliePaymentId) {\n    throw new Error('Fournir un order_item UUID ou un Mollie payment ID (tr_xxx).\\nExemple: \"550e8400-e29b-41d4-a716-446655440000\" ou \"tr_abc123\"');\n  }\n}\nelse {\n  throw new Error('Input non reconnu. Attendu: Supabase webhook, HTTP webhook {order_item_id/mollie_payment_id}, ou Chat.');\n}\n\nreturn [{\n  json: { source, orderItemId, molliePaymentId, organizationId, rawRecord: rawRecord || null }\n}];"
+      }
+    },
+    {
+      "id": "n-sb-get-item",
+      "name": "Supabase: Get Order Item",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -80
+      ],
+      "parameters": {
+        "operation": "get",
+        "tableId": "order_items",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.orderItemId }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "20dOl3DBXkYSgXsf",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "n-if-found",
+      "name": "Trouve en Supabase ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        -80
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-found",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n-prep-supabase",
+      "name": "Preparer Donnees Supabase",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        620,
+        -80
+      ],
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\n// unit_price en Supabase = cents HT\nconst unitPriceHT = item.unit_price / 100;\nconst taxPercentage = item.tax_percentage || 20;\nconst vatRate = (taxPercentage / 100).toFixed(4);\n\n// Date de paiement = created_at de l'order_item\nconst paymentDate = item.created_at ? item.created_at.split('T')[0] : null;\n\nreturn [{\n  json: {\n    source: 'supabase',\n    organizationId: String(item.organization_id),\n    paymentDate: paymentDate,\n    invoiceItem: {\n      title: item.description || 'Service Nosho',\n      description: '',\n      quantity: '1',\n      unitPriceHT: unitPriceHT.toFixed(2),\n      vatRate: vatRate,\n      currency: 'EUR'\n    },\n    mollieTransactionId: item.mollie_transaction_id || null,\n    orderId: item.order_id\n  }\n}];"
+      }
+    },
+    {
+      "id": "n-if-mollie-id",
+      "name": "Mollie ID Disponible ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        240
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-mollie",
+              "leftValue": "={{ $('Normaliser Input').item.json.molliePaymentId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n-mollie-get",
+      "name": "Mollie: Get Payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        240
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.mollie.com/v2/payments/{{ $('Normaliser Input').item.json.molliePaymentId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8d7Qqaw7Nymao2NB",
+          "name": "Mollie API Live"
+        }
+      }
+    },
+    {
+      "id": "n-prep-mollie",
+      "name": "Preparer Donnees Mollie",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        240
+      ],
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst payment = typeof raw.data === 'string' ? JSON.parse(raw.data) : (raw.amount ? raw : raw);\n\nif (!payment.amount || !payment.amount.value) {\n  throw new Error('Reponse Mollie invalide: champ amount.value manquant. Payload: ' + JSON.stringify(raw).substring(0, 200));\n}\n\n// Mollie amounts = TTC (taxe incluse)\nconst amountTTC = parseFloat(payment.amount.value);\nconst TAX_RATE = 0.20;\nconst amountHT = amountTTC / (1 + TAX_RATE);\nconst vatRate = TAX_RATE.toFixed(4);\n\nconst organizationId = payment.metadata?.organization_id\n  || $('Normaliser Input').item.json.organizationId\n  || null;\n\nif (!organizationId) {\n  throw new Error(\n    'Impossible de determiner organization_id pour le paiement Mollie ' + payment.id + '. '\n    + 'metadata.organization_id absent et aucun organization_id fourni.'\n  );\n}\n\n// Date de paiement Mollie (paidAt) pour la facture\nconst paidAt = payment.paidAt || payment.createdAt || null;\nconst paymentDate = paidAt ? paidAt.split('T')[0] : null;\n\nconst description = payment.description || 'Paiement Mollie';\nconst descLines = [];\nif (payment.metadata?.label) descLines.push(payment.metadata.label);\nif (paymentDate) descLines.push('Paye le ' + paymentDate);\ndescLines.push('Ref. Mollie: ' + payment.id);\n\nreturn [{\n  json: {\n    source: 'mollie',\n    organizationId: String(organizationId),\n    paymentDate: paymentDate,\n    invoiceItem: {\n      title: description,\n      description: descLines.join('\\n'),\n      quantity: '1',\n      unitPriceHT: amountHT.toFixed(2),\n      vatRate: vatRate,\n      currency: payment.amount.currency || 'EUR'\n    },\n    mollieTransactionId: payment.id,\n    molliePayment: {\n      status: payment.status,\n      paidAt: paidAt,\n      amountTTC: amountTTC.toFixed(2),\n      amountHT: amountHT.toFixed(2)\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "n-err-no-mollie",
+      "name": "Erreur: Pas de Mollie ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        440
+      ],
+      "parameters": {
+        "jsCode": "const input = $('Normaliser Input').first().json;\nthrow new Error(\n  'Order item non trouve dans Supabase et aucun identifiant Mollie disponible. '\n  + 'orderItemId: ' + (input.orderItemId || 'null') + ', '\n  + 'molliePaymentId: ' + (input.molliePaymentId || 'null') + '. '\n  + 'Fournissez un order_item_id valide ou un mollie_payment_id.'\n);"
+      }
+    },
+    {
+      "id": "n-sb-get-org",
+      "name": "Supabase: Get Organisation",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        80
+      ],
+      "parameters": {
+        "operation": "get",
+        "tableId": "organizations",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.organizationId }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "20dOl3DBXkYSgXsf",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "id": "n-if-org-valid",
+      "name": "Org Valide ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1580,
+        80
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-qonto-id",
+              "leftValue": "={{ $json.qonto_client_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "cond-billing",
+              "leftValue": "={{ $json.billing_name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n-build-invoice",
+      "name": "Construire Facture Qonto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        80
+      ],
+      "parameters": {
+        "jsCode": "const org = $input.first().json;\n\nlet invoiceData;\ntry { invoiceData = $('Preparer Donnees Supabase').first().json; } catch(e) {}\nif (!invoiceData) {\n  try { invoiceData = $('Preparer Donnees Mollie').first().json; } catch(e) {}\n}\n\nif (!invoiceData || !invoiceData.invoiceItem) {\n  throw new Error('Donnees de facturation introuvables.');\n}\n\nconst item = invoiceData.invoiceItem;\n\n// Utiliser la date de paiement Mollie/Supabase comme date d'emission\n// La facture est retroactive : le paiement est deja effectue\nconst paymentDate = invoiceData.paymentDate;\nconst issueDate = paymentDate || new Date().toISOString().split('T')[0];\n// Due date = issue date (deja paye)\nconst dueDate = issueDate;\n\nconst invoice = {\n  client_id: org.qonto_client_id,\n  currency: item.currency || 'EUR',\n  status: 'draft',\n  issue_date: issueDate,\n  due_date: dueDate,\n  payment_methods: {\n    iban: 'FR7616958000016697823782883'\n  },\n  items: [{\n    title: item.title,\n    description: item.description || '',\n    quantity: item.quantity || '1',\n    unit_price: {\n      value: item.unitPriceHT,\n      currency: item.currency || 'EUR'\n    },\n    vat_rate: item.vatRate\n  }]\n};\n\nreturn [{\n  json: {\n    invoice,\n    metadata: {\n      source: invoiceData.source,\n      organizationId: invoiceData.organizationId,\n      organizationName: org.billing_name,\n      mollieTransactionId: invoiceData.mollieTransactionId || null,\n      paymentDate: issueDate\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "n-qonto-post",
+      "name": "Qonto: POST Invoice Draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2060,
+        80
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://thirdparty.qonto.com/v2/client_invoices",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.invoice) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "gwVk0SQCwLYwDme5",
+          "name": "Qonto API"
+        }
+      }
+    },
+    {
+      "id": "n-result",
+      "name": "Resultat Final",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2300,
+        80
+      ],
+      "parameters": {
+        "jsCode": "const qonto = $input.first().json;\nlet metadata;\ntry { metadata = $('Construire Facture Qonto').first().json.metadata; } catch(e) { metadata = {}; }\n\nconst result = {\n  success: true,\n  message: 'Facture brouillon creee pour ' + (metadata.organizationName || 'client'),\n  qontoInvoiceId: qonto.id || qonto.client_invoice?.id || 'unknown',\n  status: 'draft',\n  source: metadata.source || 'unknown',\n  organizationName: metadata.organizationName || '',\n  mollieTransactionId: metadata.mollieTransactionId || null\n};\n\nreturn [{ json: result }];"
+      }
+    },
+    {
+      "id": "n-respond",
+      "name": "Repondre Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2540,
+        80
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n-err-org",
+      "name": "Erreur: Org Incomplete",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        320
+      ],
+      "parameters": {
+        "jsCode": "const org = $input.first().json;\nconst missing = [];\nif (!org.qonto_client_id) missing.push('qonto_client_id');\nif (!org.billing_name) missing.push('billing_name');\nif (!org.billing_address) missing.push('billing_address');\n\nconst orgName = org.name || org.billing_name || 'ID: ' + (org.id || 'inconnu');\nthrow new Error(\n  'Organisation \"' + orgName + '\" incomplete. Champs manquants: ' + missing.join(', ') + '. '\n  + 'Mettre a jour dans Supabase (et/ou lancer Pappers) avant de creer la facture.'\n);"
+      }
+    },
+    {
+      "id": "n-if-has-id",
+      "name": "Has Order Item ID ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        40,
+        80
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-has-id",
+              "leftValue": "={{ $json.orderItemId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Supabase DB Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normaliser Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat": {
+      "main": [
+        [
+          {
+            "node": "Normaliser Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normaliser Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normaliser Input": {
+      "main": [
+        [
+          {
+            "node": "Has Order Item ID ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Get Order Item": {
+      "main": [
+        [
+          {
+            "node": "Trouve en Supabase ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trouve en Supabase ?": {
+      "main": [
+        [
+          {
+            "node": "Preparer Donnees Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mollie ID Disponible ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparer Donnees Supabase": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Get Organisation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mollie ID Disponible ?": {
+      "main": [
+        [
+          {
+            "node": "Mollie: Get Payment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erreur: Pas de Mollie ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mollie: Get Payment": {
+      "main": [
+        [
+          {
+            "node": "Preparer Donnees Mollie",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparer Donnees Mollie": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Get Organisation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Get Organisation": {
+      "main": [
+        [
+          {
+            "node": "Org Valide ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Org Valide ?": {
+      "main": [
+        [
+          {
+            "node": "Construire Facture Qonto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Erreur: Org Incomplete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construire Facture Qonto": {
+      "main": [
+        [
+          {
+            "node": "Qonto: POST Invoice Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qonto: POST Invoice Draft": {
+      "main": [
+        [
+          {
+            "node": "Resultat Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultat Final": {
+      "main": [
+        [
+          {
+            "node": "Repondre Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Order Item ID ?": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Get Order Item",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mollie ID Disponible ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

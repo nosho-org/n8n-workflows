@@ -1,0 +1,433 @@
+{
+  "name": "Recherche Pappers API -> Supabase",
+  "nodes": [
+    {
+      "id": "7817221e-60f9-41ea-934e-98da968b0ca3",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -208,
+        -80
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "update-billing-data",
+        "options": {},
+        "responseMode": "responseNode"
+      },
+      "webhookId": "c9c2268d-3a74-4141-a8d6-a8bc79e16e68"
+    },
+    {
+      "id": "3f8a1e2b-4c5d-6e7f-8a9b-0c1d2e3f4a5b",
+      "name": "SIRET fourni ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        80,
+        -80
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-1",
+              "leftValue": "={{ $json.body.siret }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "4a9b2f3c-5d6e-7f8a-9b0c-1d2e3f4a5b6c",
+      "name": "Pappers Recherche",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        320,
+        -240
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.pappers.fr/v2/recherche",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "api_token",
+              "value": "575d6bca8b4e145f04b4cab63bad05652a75ab2d81948933"
+            },
+            {
+              "name": "q",
+              "value": "={{ $json.body.query }}"
+            },
+            {
+              "name": "par_page",
+              "value": "10"
+            },
+            {
+              "name": "bases",
+              "value": "entreprises"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "5b0c3a4d-6e7f-8a9b-0c1d-2e3f4a5b6c7d",
+      "name": "Format Résultats",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        -240
+      ],
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst results = (data.resultats || []).slice(0, 10);\n\nconst formatted = results.map((r, i) => {\n  const siege = r.siege || {};\n  const addr = [siege.adresse_ligne_1, siege.code_postal, siege.ville]\n    .filter(Boolean).join(', ');\n  return {\n    index: i + 1,\n    siret: siege.siret || '',\n    siren: r.siren || '',\n    name: r.denomination || r.nom_entreprise || '',\n    address: addr,\n    legal_form: r.forme_juridique || ''\n  };\n});\n\nconst list = formatted.length > 0\n  ? formatted.map(r =>\n      `${r.index}. ${r.name}\\n   SIRET: ${r.siret}\\n   ${r.address}\\n   ${r.legal_form}`\n    ).join('\\n\\n')\n  : 'Aucune entreprise trouvée.';\n\nreturn [{\n  json: {\n    total: data.total || 0,\n    results: formatted,\n    message: formatted.length > 0\n      ? `${formatted.length} résultat(s) trouvé(s) :\\n\\n${list}\\n\\nEnvoyez { \"siret\": \"XXXXXXXXXXXXXX\" } pour confirmer.`\n      : list\n  }\n}];"
+      }
+    },
+    {
+      "id": "6c1d4b5e-7f8a-9b0c-1d2e-3f4a5b6c7d8e",
+      "name": "Répondre Recherche",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        800,
+        -240
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "7d2e5c6f-8a9b-0c1d-2e3f-4a5b6c7d8e9f",
+      "name": "Pappers Détails",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        320,
+        80
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.pappers.fr/v2/entreprise",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "api_token",
+              "value": "575d6bca8b4e145f04b4cab63bad05652a75ab2d81948933"
+            },
+            {
+              "name": "siret",
+              "value": "={{ $json.body.siret }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8e3f6d7a-9b0c-1d2e-3f4a-5b6c7d8e9f0a",
+      "name": "Extraire Données Org",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        80
+      ],
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst siege = d.siege || {};\n\nreturn [{\n  json: {\n    name: d.denomination || d.nom_entreprise || '',\n    siret: siege.siret || '',\n    billing_name: d.denomination || d.nom_entreprise || '',\n    billing_address: siege.adresse_ligne_1 || siege.adresse || '',\n    billing_zipcode: siege.code_postal || '',\n    billing_city: siege.ville || '',\n    updated_at: new Date().toISOString()\n  }\n}];"
+      }
+    },
+    {
+      "id": "9f4a7e8b-0c1d-2e3f-4a5b-6c7d8e9f0a1b",
+      "name": "Supabase Upsert Organisation",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        -40
+      ],
+      "parameters": {
+        "operation": "update",
+        "tableId": "organizations",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "siret",
+              "fieldValue": "={{ $json.siret }}"
+            },
+            {
+              "fieldId": "billing_name",
+              "fieldValue": "={{ $json.billing_name }}"
+            },
+            {
+              "fieldId": "billing_address",
+              "fieldValue": "={{ $json.billing_address }}"
+            },
+            {
+              "fieldId": "billing_zipcode",
+              "fieldValue": "={{ $json.billing_zipcode }}"
+            },
+            {
+              "fieldId": "billing_city",
+              "fieldValue": "={{ $json.billing_city }}"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ $json.updated_at }}"
+            }
+          ]
+        },
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "name",
+              "condition": "ilike",
+              "keyValue": "={{ $json.name }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "20dOl3DBXkYSgXsf",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "id": "0a5b8f9c-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
+      "name": "Répondre Confirmation",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        800,
+        80
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, message: 'Organisation ' + $json.billing_name + ' (SIRET: ' + $json.siret + ') mise à jour dans Supabase.', siret: $json.siret, billing_name: $json.billing_name, billing_address: $json.billing_address, billing_city: $json.billing_city } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "d4e5f6a7-b8c9-0d1e-2f3a-4b5c6d7e8f90",
+      "name": "Get Organisation Qonto",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        200
+      ],
+      "parameters": {
+        "operation": "get",
+        "tableId": "organizations",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "siret",
+              "keyValue": "={{ $json.siret }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "20dOl3DBXkYSgXsf",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "id": "e5f6a7b8-c9d0-1e2f-3a4b-5c6d7e8f9012",
+      "name": "A un Qonto ID ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1280,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-qonto",
+              "leftValue": "={{ $json.qonto_client_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f6a7b8c9-d0e1-2f3a-4b5c-6d7e8f901234",
+      "name": "Update Qonto Client",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1520,
+        200
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://thirdparty.qonto.com/v2/clients/{{ $json.qonto_client_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { name: $('Extraire Données Org').first().json.billing_name, billing_address: { street_address: $('Extraire Données Org').first().json.billing_address, city: $('Extraire Données Org').first().json.billing_city, zip_code: $('Extraire Données Org').first().json.billing_zipcode, country_code: 'fr' } } }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "gwVk0SQCwLYwDme5",
+          "name": "Qonto API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "SIRET fourni ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SIRET fourni ?": {
+      "main": [
+        [
+          {
+            "node": "Pappers Détails",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pappers Recherche",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pappers Recherche": {
+      "main": [
+        [
+          {
+            "node": "Format Résultats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Résultats": {
+      "main": [
+        [
+          {
+            "node": "Répondre Recherche",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pappers Détails": {
+      "main": [
+        [
+          {
+            "node": "Extraire Données Org",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraire Données Org": {
+      "main": [
+        [
+          {
+            "node": "Supabase Upsert Organisation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Organisation Qonto",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Répondre Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Organisation Qonto": {
+      "main": [
+        [
+          {
+            "node": "A un Qonto ID ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A un Qonto ID ?": {
+      "main": [
+        [
+          {
+            "node": "Update Qonto Client",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

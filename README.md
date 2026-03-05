@@ -38,11 +38,13 @@ Copy `.mcp.json.example` → `.mcp.json` and fill in your API key, then reload C
 ```
 .
 ├── workflows/
-│   ├── chatbot-slack-openrouter.json      # ChatBot — Slack + AI Agent + OpenRouter
-│   └── whatsbot-waha-openrouter.json      # WhatsBot — WhatsApp (WAHA) + AI Agent + OpenRouter
-├── .mcp.json                              # Claude Code MCP config (local only)
-├── .mcp.json.example                      # MCP config template
-└── CLAUDE.md                              # Claude Code project instructions
+│   ├── chatbot-slack-openrouter.json          # ChatBot — Slack + AI Agent + OpenRouter
+│   ├── whatsbot-waha-openrouter.json          # WhatsBot — WhatsApp (WAHA) + AI Agent + OpenRouter
+│   ├── qonto-invoice-supabase-mollie.json     # Qonto Invoice — Supabase + Mollie → Qonto
+│   └── pappers-siret-supabase-webhook.json    # Pappers → Supabase — Recherche SIRET
+├── .mcp.json                                  # Claude Code MCP config (local only)
+├── .mcp.json.example                          # MCP config template
+└── CLAUDE.md                                  # Claude Code project instructions
 ```
 
 ---
@@ -112,6 +114,131 @@ https://n8n.nosho.cc/webhook/c7a2e3f1-4d8b-4e9a-b012-5c6d7e8f9a1b
 
 **Credentials requis :**
 - `OpenRouter API` — Clé API [openrouter.ai](https://openrouter.ai)
+
+### Qonto Invoice (`qonto-invoice-supabase-mollie.json`)
+
+Création automatique de factures dans Qonto à partir des paiements Mollie et des données Supabase. Gère le backlog de factures passées et les nouvelles commandes.
+
+**Flow :**
+```
+Supabase DB Webhook ──┐
+Chat Trigger ─────────┼──> Normaliser Input
+HTTP Webhook Manuel ──┘          │
+                          Has Order Item ID?
+                         ┌──YES──┴──NO──┐
+                         ▼              ▼
+               Supabase Lookup    Mollie ID Disponible?
+                    │            ┌──YES──┴──NO──┐
+               En Supabase?      ▼              ▼
+              ┌─YES──┴─NO─┐  Mollie API    Erreur
+              ▼            ▼     │
+         Données HT    Mollie ID?│
+              │            │     │
+              └──────┬─────┘     │
+                     ▼           │
+              Get Organisation ◄─┘
+                     │
+                Org Valide?
+               ┌─YES──┴─NO─┐
+               ▼            ▼
+        Construire       Erreur
+         Facture
+            │
+            ▼
+    Qonto POST Invoice (draft)
+            │
+            ▼
+       Répondre Webhook
+```
+
+**Nodes (19) :**
+| Node | Type | Role |
+|---|---|---|
+| Supabase DB Webhook | `webhook` | Trigger sur INSERT `order_items` |
+| Chat Trigger | `chatTrigger` | Rattrapage backlog via n8n UI |
+| HTTP Webhook Manuel | `webhook` | `POST /webhook/create-invoice` |
+| Normaliser Input | `code` | Unifie les 3 formats d'entrée |
+| Has Order Item ID ? | `if` | Route selon présence d'un UUID |
+| Supabase: Get Order Item | `supabase` | Lookup `order_items` par ID |
+| Trouve en Supabase ? | `if` | Vérifie si l'item existe |
+| Preparer Donnees Supabase | `code` | `unit_price` cents → EUR HT |
+| Mollie ID Disponible ? | `if` | Vérifie présence d'un `tr_xxx` |
+| Mollie: Get Payment | `httpRequest` | `GET /v2/payments/{id}` |
+| Preparer Donnees Mollie | `code` | TTC → HT (`amount / 1.20`) |
+| Erreur: Pas de Mollie ID | `code` | Erreur si aucune source |
+| Supabase: Get Organisation | `supabase` | Lookup `organizations` par ID |
+| Org Valide ? | `if` | Vérifie `qonto_client_id` + `billing_name` |
+| Construire Facture Qonto | `code` | Build payload invoice |
+| Qonto: POST Invoice Draft | `httpRequest` | `POST /v2/client_invoices` |
+| Resultat Final | `code` | Format réponse |
+| Repondre Webhook | `respondToWebhook` | Réponse HTTP |
+| Erreur: Org Incomplete | `code` | Erreur si org incomplète |
+
+**Calcul TVA :**
+- Les montants Mollie sont **TTC** (taxe incluse)
+- HT = TTC / 1.20, TVA = 20% (`vat_rate: "0.2000"`)
+- Les montants Supabase (`unit_price`) sont déjà en **centimes HT**
+
+**Dates :**
+- `issue_date` = date de paiement Mollie (`paidAt`) ou `created_at` Supabase
+- `due_date` = `issue_date` (facture déjà réglée)
+
+**Utilisation :**
+```bash
+# Créer une facture depuis un paiement Mollie
+curl -X POST https://n8n.nosho.cc/webhook/create-invoice \
+  -H "Content-Type: application/json" \
+  -d '{"mollie_payment_id": "tr_WoLiBK5qxDZ7u9UHrobMJ"}'
+
+# Créer une facture depuis un order_item Supabase
+curl -X POST https://n8n.nosho.cc/webhook/create-invoice \
+  -H "Content-Type: application/json" \
+  -d '{"order_item_id": "uuid-de-lorder-item"}'
+```
+
+**Credentials requis :**
+- `Qonto API` — Header auth `Authorization: {login}:{secret_key}`
+- `Mollie API Live` — Header auth `Authorization: Bearer {api_key}`
+- `Supabase account` — API Supabase
+
+### Pappers → Supabase (`pappers-siret-supabase-webhook.json`)
+
+Recherche d'entreprises via l'API Pappers et enrichissement des données de facturation dans Supabase. Met également à jour le client Qonto si existant.
+
+**Flow :**
+```
+POST /webhook/update-billing-data
+         │
+    SIRET fourni ?
+   ┌─YES──┴──NO─┐
+   ▼             ▼
+Pappers      Pappers
+Détails      Recherche → Format Résultats → Répondre (liste)
+   │
+   ▼
+Extraire Données Org
+   │
+   ├──> Supabase Upsert (filtre ilike sur name)
+   ├──> Répondre Confirmation
+   └──> Get Organisation → A un Qonto ID ? → Update Qonto Client
+```
+
+**Utilisation :**
+```bash
+# Recherche par nom
+curl -X POST https://n8n.nosho.cc/webhook/update-billing-data \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Nom de la société"}'
+
+# Confirmation par SIRET
+curl -X POST https://n8n.nosho.cc/webhook/update-billing-data \
+  -H "Content-Type: application/json" \
+  -d '{"siret": "88782780600027"}'
+```
+
+**Credentials requis :**
+- `Supabase account` — API Supabase
+- `Qonto API` — Header auth (pour mise à jour client Qonto)
 
 ---
 
